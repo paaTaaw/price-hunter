@@ -1,0 +1,21 @@
+
+
+/Users/paataaw/Developer/price-hunter/frontend/src/app/search/page.tsx
+  56:17  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render p
+  56:17  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-locati
+  56:17  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+/Users/paataaw/Developer/price-hunter/frontend/src/components/category-section.tsx
+  53:36  warning  'index' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/paataaw/Developer/price-hunter/frontend/src/components/product-card.tsx
+  20:9  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image
+  20:9  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. Se
+  20:9  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/paataaw/Developer/price-hunter/frontend/src/components/search-results.tsx
+  95:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/imag
+  95:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. S
+  95:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+✖ 4 problems (0 errors, 4 warnings)
