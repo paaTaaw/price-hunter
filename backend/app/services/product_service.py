@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 
 from app.adapters.base import StoreAdapter
 from app.adapters.mock_store import MockStoreAdapter
+from app.adapters.demo_store_two import DemoStoreTwoAdapter
 from app.services.product_matcher import group_products
 
 
@@ -12,8 +13,13 @@ class ProductService:
     """
 
     def __init__(self) -> None:
+        """
+        Register all available store adapters.
+        """
+
         self.stores: List[StoreAdapter] = [
             MockStoreAdapter(),
+            DemoStoreTwoAdapter(),
         ]
 
     async def search_products(
@@ -22,7 +28,8 @@ class ProductService:
         sort: str = "lowest",
     ) -> Dict[str, Any]:
         """
-        Search all stores and return grouped results.
+        Search all configured stores and return
+        grouped and sorted products.
         """
 
         query = query.strip()
@@ -37,61 +44,86 @@ class ProductService:
 
         all_offers: List[Dict[str, Any]] = []
 
-        # Search every configured store.
+        # -----------------------------------------------------
+        # Search every configured store
+        # -----------------------------------------------------
+
         for store in self.stores:
+
             try:
                 offers = await store.search(query)
 
-                all_offers.extend(offers)
+                if isinstance(offers, list):
+                    all_offers.extend(offers)
 
             except Exception as error:
+
                 print(
                     f"Store search failed: "
                     f"{store.name}: {error}"
                 )
 
-        # Group matching products.
+        # -----------------------------------------------------
+        # Group matching products
+        # -----------------------------------------------------
+
         product_groups = group_products(
             all_offers
         )
 
-        # Sort by lowest price.
+        # -----------------------------------------------------
+        # Sort by lowest price
+        # -----------------------------------------------------
+
         if sort == "lowest":
+
             product_groups.sort(
                 key=lambda product: product.get(
-                    "best_price",
-                    float("inf"),
+                    "total_price",
+                    product.get(
+                        "best_price",
+                        float("inf"),
+                    ),
                 )
             )
 
-        # Sort by highest price.
+        # -----------------------------------------------------
+        # Sort by highest price
+        # -----------------------------------------------------
+
         elif sort == "highest":
+
             product_groups.sort(
                 key=lambda product: product.get(
-                    "best_price",
-                    0,
+                    "total_price",
+                    product.get(
+                        "best_price",
+                        0,
+                    ),
                 ),
                 reverse=True,
             )
 
-        # Sort by discount.
+        # -----------------------------------------------------
+        # Sort by discount
+        # -----------------------------------------------------
+
         elif sort == "discount":
+
             product_groups.sort(
-                key=lambda product: max(
-                    (
-                        offer.get(
-                            "discount",
-                            0,
-                        )
-                        or 0
+                key=lambda product: (
+                    product.get(
+                        "discount",
+                        0,
                     )
-                    for offer in product.get(
-                        "offers",
-                        [],
-                    )
+                    or 0
                 ),
                 reverse=True,
             )
+
+        # -----------------------------------------------------
+        # Return API response
+        # -----------------------------------------------------
 
         return {
             "query": query,
