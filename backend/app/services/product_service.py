@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from app.adapters.base import StoreAdapter
 from app.adapters.mock_store import MockStoreAdapter
 from app.adapters.demo_store_two import DemoStoreTwoAdapter
+from app.adapters.daraz_nepal import DarazNepalAdapter
 from app.services.product_matcher import group_products
 
 
@@ -20,6 +21,7 @@ class ProductService:
         self.stores: List[StoreAdapter] = [
             MockStoreAdapter(),
             DemoStoreTwoAdapter(),
+            DarazNepalAdapter(),
         ]
 
     async def search_products(
@@ -49,7 +51,6 @@ class ProductService:
         # -----------------------------------------------------
 
         for store in self.stores:
-
             try:
                 offers = await store.search(query)
 
@@ -57,7 +58,6 @@ class ProductService:
                     all_offers.extend(offers)
 
             except Exception as error:
-
                 print(
                     f"Store search failed: "
                     f"{store.name}: {error}"
@@ -72,11 +72,10 @@ class ProductService:
         )
 
         # -----------------------------------------------------
-        # Sort by lowest price
+        # Sort by lowest total price
         # -----------------------------------------------------
 
         if sort == "lowest":
-
             product_groups.sort(
                 key=lambda product: product.get(
                     "total_price",
@@ -88,11 +87,10 @@ class ProductService:
             )
 
         # -----------------------------------------------------
-        # Sort by highest price
+        # Sort by highest total price
         # -----------------------------------------------------
 
         elif sort == "highest":
-
             product_groups.sort(
                 key=lambda product: product.get(
                     "total_price",
@@ -109,7 +107,6 @@ class ProductService:
         # -----------------------------------------------------
 
         elif sort == "discount":
-
             product_groups.sort(
                 key=lambda product: (
                     product.get(
