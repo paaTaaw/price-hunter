@@ -1,121 +1,451 @@
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set
 
 
-def normalize_text(value: Any) -> str:
-    """
-    Convert a value into normalized searchable text.
-    """
-
-    if value is None:
-        return ""
-
-    text = str(value).lower().strip()
-
-    replacements = {
-        "-": " ",
-        "_": " ",
-        "/": " ",
-        "\\": " ",
-        "(": " ",
-        ")": " ",
-        "[": " ",
-        "]": " ",
-        "{": " ",
-        "}": " ",
-        ",": " ",
-        ".": " ",
-        ":": " ",
-        "|": " ",
-    }
-
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-
-    return " ".join(text.split())
-
+# ============================================================
+# TEXT NORMALIZATION
+# ============================================================
 
 def normalize_product_name(name: str) -> str:
     """
-    Normalize a product name so similar names can be compared.
+    Normalize product text so small formatting differences
+    do not prevent products from being matched.
+
+    Example:
+        Apple iPhone 15 128GB
+        apple iphone 15 128 gb
+
+    become approximately the same representation.
     """
 
-    return normalize_text(name)
+    if not name:
+        return ""
 
+    normalized = str(name).lower().strip()
 
-def extract_storage(text: str) -> str:
-    """
-    Extract common storage values such as:
+    # Normalize separators.
+    normalized = re.sub(r"[-_/\\(),.:]+", " ", normalized)
 
-        128GB
-        256 GB
-        512gb
-        1TB
-    """
-
-    normalized = normalize_text(text)
-
-    match = re.search(
-        r"\b(1|2|4|8|16|32|64|128|256|512)\s*(gb|tb)\b",
+    # Normalize storage notation.
+    normalized = re.sub(
+        r"(\d+(?:\.\d+)?)\s+(gb|tb)",
+        r"\1\2",
         normalized,
     )
 
+    # Normalize whitespace.
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+
+    return normalized
+
+
+# ============================================================
+# SEARCH INTENT
+# ============================================================
+
+# Words that normally describe accessories rather than
+# the main electronic/device itself.
+ACCESSORY_TERMS: Set[str] = {
+    "case",
+    "cover",
+    "shell",
+    "bumper",
+    "pouch",
+    "wallet",
+    "sleeve",
+    "protector",
+    "screen",
+    "glass",
+    "tempered",
+    "film",
+    "guard",
+    "skin",
+    "sticker",
+    "decal",
+    "wrap",
+    "cable",
+    "charger",
+    "adapter",
+    "dock",
+    "stand",
+    "holder",
+    "mount",
+    "strap",
+    "band",
+    "replacement",
+    "battery",
+    "keyboard",
+    "mouse",
+    "stylus",
+    "pen",
+    "earpads",
+    "earpad",
+    "headband",
+    "lens",
+    "camera",
+    "tripod",
+    "bag",
+    "backpack",
+    "screenprotector",
+}
+
+# Words that clearly indicate the user actually wants
+# an accessory.
+ACCESSORY_INTENT_TERMS: Set[str] = {
+    "case",
+    "cover",
+    "shell",
+    "bumper",
+    "pouch",
+    "wallet",
+    "sleeve",
+    "protector",
+    "screen",
+    "glass",
+    "tempered",
+    "film",
+    "guard",
+    "skin",
+    "sticker",
+    "decal",
+    "wrap",
+    "cable",
+    "charger",
+    "adapter",
+    "dock",
+    "stand",
+    "holder",
+    "mount",
+    "strap",
+    "band",
+    "replacement",
+    "battery",
+    "keyboard",
+    "mouse",
+    "stylus",
+    "pen",
+    "earpads",
+    "earpad",
+    "headband",
+    "lens",
+    "tripod",
+    "bag",
+    "backpack",
+    "screenprotector",
+}
+
+
+def _query_tokens(query: str) -> Set[str]:
+    """
+    Convert a search query into normalized tokens.
+    """
+
+    normalized = normalize_product_name(query)
+
+    if not normalized:
+        return set()
+
+    return set(normalized.split())
+
+
+def _product_text(product: Dict[str, Any]) -> str:
+    """
+    Build searchable text from the most useful product fields.
+    """
+
+    values = [
+        product.get("brand", ""),
+        product.get("name", ""),
+        product.get("model", ""),
+        product.get("variant", ""),
+        product.get("category", ""),
+    ]
+
+    return normalize_product_name(
+        " ".join(
+            str(value)
+            for value in values
+            if value
+        )
+    )
+
+
+def _product_tokens(product: Dict[str, Any]) -> Set[str]:
+    """
+    Return normalized product tokens.
+    """
+
+    text = _product_text(product)
+
+    if not text:
+        return set()
+
+    return set(text.split())
+
+
+def _has_accessory_term(text: str) -> bool:
+    """
+    Determine whether text contains an accessory term.
+    """
+
+    normalized = normalize_product_name(text)
+    tokens = set(normalized.split())
+
+    # Direct token match.
+    if tokens.intersection(ACCESSORY_TERMS):
+        return True
+
+    # Handle joined words such as screenprotector.
+    compact = normalized.replace(" ", "")
+
+    return any(
+        term in compact
+        for term in ACCESSORY_TERMS
+        if len(term) >= 8
+    )
+
+
+def _query_is_accessory_search(query: str) -> bool:
+    """
+    Determine whether the user explicitly searched for
+    an accessory.
+    """
+
+    tokens = _query_tokens(query)
+
+    return bool(
+        tokens.intersection(ACCESSORY_INTENT_TERMS)
+    )
+
+
+def product_relevance(
+    product: Dict[str, Any],
+    query: str,
+) -> float:
+    """
+    Calculate how relevant a product is to the user's query.
+
+    This is intentionally a lightweight local relevance
+    system. It does not require an AI API or external service.
+
+    Higher score = more relevant.
+    """
+
+    query_tokens = _query_tokens(query)
+
+    if not query_tokens:
+        return 1.0
+
+    product_tokens = _product_tokens(product)
+
+    if not product_tokens:
+        return 0.0
+
+    common = query_tokens.intersection(product_tokens)
+
+    if not common:
+        return 0.0
+
+    # Basic token coverage.
+    score = len(common) / len(query_tokens)
+
+    # Product-name matching receives additional weight.
+    name_tokens = set(
+        normalize_product_name(
+            str(product.get("name", ""))
+        ).split()
+    )
+
+    name_common = query_tokens.intersection(name_tokens)
+
+    if name_common:
+        score += 0.20 * (
+            len(name_common) / len(query_tokens)
+        )
+
+    # Brand/model/category information can strengthen
+    # relevance without dominating it.
+    brand = normalize_product_name(
+        str(product.get("brand", ""))
+    )
+
+    if brand:
+        brand_tokens = set(brand.split())
+        if query_tokens.intersection(brand_tokens):
+            score += 0.10
+
+    return min(score, 1.0)
+
+
+def filter_by_search_intent(
+    products: List[Dict[str, Any]],
+    query: str,
+) -> List[Dict[str, Any]]:
+    """
+    Remove obvious accessory noise when the user is searching
+    for the main product.
+
+    Example:
+
+        query = "iPhone"
+
+        "Apple iPhone 15" -> kept
+        "iPhone 15 Case" -> removed
+        "iPhone Tempered Glass" -> removed
+
+    But:
+
+        query = "iPhone case"
+
+        accessory products are allowed because the user
+        explicitly requested an accessory.
+    """
+
+    if not query.strip():
+        return products
+
+    query_is_accessory = _query_is_accessory_search(query)
+
+    filtered: List[Dict[str, Any]] = []
+
+    for product in products:
+        if not isinstance(product, dict):
+            continue
+
+        product_text = _product_text(product)
+
+        # If user explicitly searches for an accessory,
+        # do not apply the main-product exclusion.
+        if query_is_accessory:
+            filtered.append(product)
+            continue
+
+        # Otherwise remove products that clearly describe
+        # themselves as accessories.
+        if _has_accessory_term(product_text):
+            continue
+
+        # Keep products with reasonable query relevance.
+        relevance = product_relevance(
+            product,
+            query,
+        )
+
+        if relevance >= 0.30:
+            filtered.append(product)
+
+    # If filtering became too aggressive, fall back to the
+    # original results rather than returning nothing.
+    if not filtered and products:
+        scored_products = sorted(
+            products,
+            key=lambda item: product_relevance(
+                item,
+                query,
+            ),
+            reverse=True,
+        )
+
+        return scored_products[:20]
+
+    return filtered
+
+
+# ============================================================
+# PRODUCT ATTRIBUTES
+# ============================================================
+
+def _extract_storage(
+    product: Dict[str, Any],
+) -> Optional[str]:
+    """
+    Extract storage capacity.
+
+    Examples:
+        128GB
+        256 GB
+        1TB
+    """
+
+    values = [
+        product.get("name", ""),
+        product.get("model", ""),
+        product.get("variant", ""),
+    ]
+
+    text = " ".join(
+        str(value)
+        for value in values
+        if value
+    ).lower()
+
+    match = re.search(
+        r"\b(\d+(?:\.\d+)?)\s*(gb|tb)\b",
+        text,
+    )
+
     if not match:
-        return ""
+        return None
 
     return f"{match.group(1)}{match.group(2)}"
 
 
-def extract_model(product: Dict[str, Any]) -> str:
+def _extract_model_number(
+    product: Dict[str, Any],
+) -> Optional[str]:
     """
-    Build a model identifier from explicit model data
-    or from the product name.
+    Extract common model-number patterns.
+
+    Examples:
+        WH-1000XM5
+        WH-1000XM6
+        A2890
     """
 
-    model = normalize_text(product.get("model", ""))
+    values = [
+        product.get("name", ""),
+        product.get("model", ""),
+        product.get("variant", ""),
+    ]
 
-    if model:
-        return model
+    text = " ".join(
+        str(value)
+        for value in values
+        if value
+    ).lower()
 
-    name = normalize_text(product.get("name", ""))
-
-    # Common Apple model names.
-    apple_match = re.search(
-        r"\biphone\s+\d+(?:\s+pro)?(?:\s+max)?(?:\s+plus)?(?:\s+mini)?",
-        name,
+    # Sony-style model numbers.
+    sony_match = re.search(
+        r"\b[a-z]{2,5}-\d{3,}[a-z]*\d*\b",
+        text,
     )
 
-    if apple_match:
-        return apple_match.group(0)
+    if sony_match:
+        return sony_match.group(0)
 
-    # Common MacBook models.
-    macbook_match = re.search(
-        r"\bmacbook\s+(?:air|pro)(?:\s+[a-z]\d+)?",
-        name,
+    # Generic alphanumeric model numbers.
+    generic_match = re.search(
+        r"\b[a-z]{1,4}\d{2,}[a-z0-9-]*\b",
+        text,
     )
 
-    if macbook_match:
-        return macbook_match.group(0)
+    if generic_match:
+        return generic_match.group(0)
 
-    # Generic model extraction.
-    return ""
+    return None
 
+
+# ============================================================
+# PRODUCT MATCHING
+# ============================================================
 
 def product_similarity(
     product_a: Dict[str, Any],
     product_b: Dict[str, Any],
 ) -> bool:
     """
-    Determine whether two product offers represent
-    the same physical product.
-
-    Matching considers:
-
-    1. Brand
-    2. Model
-    3. Storage
-    4. Variant
-    5. Product-name similarity
+    Determine whether two offers represent the same
+    physical product/variant.
     """
 
     name_a = normalize_product_name(
@@ -129,193 +459,162 @@ def product_similarity(
     if not name_a or not name_b:
         return False
 
-    # ---------------------------------------------------------
-    # Brand
-    # ---------------------------------------------------------
-
-    brand_a = normalize_text(
-        product_a.get("brand", "")
-    )
-
-    brand_b = normalize_text(
-        product_b.get("brand", "")
-    )
-
-    if brand_a and brand_b and brand_a != brand_b:
-        return False
-
-    # ---------------------------------------------------------
-    # Storage
-    # ---------------------------------------------------------
-
-    storage_a = extract_storage(
-        " ".join(
-            [
-                name_a,
-                normalize_text(product_a.get("variant", "")),
-                normalize_text(product_a.get("model", "")),
-            ]
-        )
-    )
-
-    storage_b = extract_storage(
-        " ".join(
-            [
-                name_b,
-                normalize_text(product_b.get("variant", "")),
-                normalize_text(product_b.get("model", "")),
-            ]
-        )
-    )
-
-    # If both products explicitly contain storage,
-    # different storage means different products.
-    if storage_a and storage_b and storage_a != storage_b:
-        return False
-
-    # ---------------------------------------------------------
-    # Model
-    # ---------------------------------------------------------
-
-    model_a = extract_model(product_a)
-    model_b = extract_model(product_b)
-
-    if model_a and model_b and model_a != model_b:
-        return False
-
-    # ---------------------------------------------------------
-    # Variant
-    # ---------------------------------------------------------
-
-    variant_a = normalize_text(
-        product_a.get("variant", "")
-    )
-
-    variant_b = normalize_text(
-        product_b.get("variant", "")
-    )
-
-    if variant_a and variant_b:
-        variant_storage_a = extract_storage(variant_a)
-        variant_storage_b = extract_storage(variant_b)
-
-        if (
-            variant_storage_a
-            and variant_storage_b
-            and variant_storage_a != variant_storage_b
-        ):
-            return False
-
-    # ---------------------------------------------------------
-    # Exact normalized name
-    # ---------------------------------------------------------
-
+    # Exact match.
     if name_a == name_b:
         return True
 
-    # ---------------------------------------------------------
-    # Token similarity
-    # ---------------------------------------------------------
+    # --------------------------------------------------------
+    # Brand check
+    # --------------------------------------------------------
 
-    words_a = set(name_a.split())
-    words_b = set(name_b.split())
-
-    if not words_a or not words_b:
-        return False
-
-    common_words = words_a.intersection(words_b)
-
-    similarity = len(common_words) / max(
-        len(words_a),
-        len(words_b),
+    brand_a = normalize_product_name(
+        str(product_a.get("brand", ""))
     )
 
-    return similarity >= 0.65
+    brand_b = normalize_product_name(
+        str(product_b.get("brand", ""))
+    )
+
+    if (
+        brand_a
+        and brand_b
+        and brand_a != brand_b
+    ):
+        return False
+
+    # --------------------------------------------------------
+    # Storage check
+    # --------------------------------------------------------
+
+    storage_a = _extract_storage(product_a)
+    storage_b = _extract_storage(product_b)
+
+    if (
+        storage_a
+        and storage_b
+        and storage_a != storage_b
+    ):
+        return False
+
+    # --------------------------------------------------------
+    # Model check
+    # --------------------------------------------------------
+
+    model_a = _extract_model_number(product_a)
+    model_b = _extract_model_number(product_b)
+
+    if (
+        model_a
+        and model_b
+        and model_a != model_b
+    ):
+        return False
+
+    # --------------------------------------------------------
+    # Accessory/main-product separation
+    # --------------------------------------------------------
+
+    accessory_a = _has_accessory_term(
+        _product_text(product_a)
+    )
+
+    accessory_b = _has_accessory_term(
+        _product_text(product_b)
+    )
+
+    if accessory_a != accessory_b:
+        return False
+
+    # --------------------------------------------------------
+    # Token similarity
+    # --------------------------------------------------------
+
+    tokens_a = _product_tokens(product_a)
+    tokens_b = _product_tokens(product_b)
+
+    if not tokens_a or not tokens_b:
+        return False
+
+    common_tokens = tokens_a.intersection(tokens_b)
+
+    similarity = len(common_tokens) / max(
+        len(tokens_a),
+        len(tokens_b),
+    )
+
+    return similarity >= 0.60
 
 
-def calculate_total_price(
-    offer: Dict[str, Any],
+# ============================================================
+# DISCOUNT
+# ============================================================
+
+def _calculate_discount(
+    price: Optional[float],
+    old_price: Optional[float],
+    discount: Any,
 ) -> float:
     """
-    Calculate the actual comparable price.
-
-    total price = product price + shipping
+    Calculate a reliable discount percentage.
     """
 
-    price = offer.get("price", 0)
-
-    if not isinstance(price, (int, float)):
-        return float("inf")
-
-    shipping = offer.get("shipping", 0)
-
-    if not isinstance(shipping, (int, float)):
-        shipping = 0
-
-    return float(price) + float(shipping)
-
-
-def calculate_discount(
-    offer: Dict[str, Any],
-) -> float:
-    """
-    Calculate discount percentage if it is not
-    already supplied by the store.
-    """
-
-    discount = offer.get("discount")
-
-    if isinstance(discount, (int, float)) and discount > 0:
-        return float(discount)
-
-    price = offer.get("price")
-    old_price = offer.get("old_price")
+    if (
+        isinstance(discount, (int, float))
+        and discount > 0
+    ):
+        return round(float(discount), 2)
 
     if (
         isinstance(price, (int, float))
         and isinstance(old_price, (int, float))
         and old_price > price
+        and old_price > 0
     ):
         return round(
-            ((old_price - price) / old_price) * 100
+            ((old_price - price) / old_price) * 100,
+            2,
         )
 
     return 0.0
 
 
+# ============================================================
+# GROUP PRODUCTS
+# ============================================================
+
 def group_products(
     products: List[Dict[str, Any]],
+    query: str = "",
 ) -> List[Dict[str, Any]]:
     """
-    Group offers representing the same product.
+    Filter, group and normalize product offers.
 
-    Example:
-
-        Store A -> iPhone 15 128GB -> Rs. 70,000
-        Store B -> Apple iPhone 15 128 GB -> Rs. 68,000
-        Store C -> iPhone 15 256GB -> Rs. 75,000
-
-    becomes two groups:
-
-        iPhone 15 128GB
-        iPhone 15 256GB
+    The query is optional so the function remains compatible
+    with older callers.
     """
+
+    # --------------------------------------------------------
+    # STEP 1: Remove irrelevant products
+    # --------------------------------------------------------
+
+    relevant_products = filter_by_search_intent(
+        products,
+        query,
+    )
+
+    # --------------------------------------------------------
+    # STEP 2: Group equivalent products
+    # --------------------------------------------------------
 
     groups: List[Dict[str, Any]] = []
 
-    # =========================================================
-    # STEP 1 — GROUP SIMILAR PRODUCTS
-    # =========================================================
-
-    for product in products:
-
+    for product in relevant_products:
         if not isinstance(product, dict):
             continue
 
         matched_group = None
 
         for group in groups:
-
             representative = group["product"]
 
             if product_similarity(
@@ -326,7 +625,6 @@ def group_products(
                 break
 
         if matched_group is None:
-
             groups.append(
                 {
                     "product": product.copy(),
@@ -335,170 +633,232 @@ def group_products(
                     ],
                 }
             )
-
         else:
-
             matched_group["offers"].append(
                 product.copy()
             )
 
-    # =========================================================
-    # STEP 2 — BUILD API RESULTS
-    # =========================================================
+    # --------------------------------------------------------
+    # STEP 3: Convert groups into API results
+    # --------------------------------------------------------
 
     results: List[Dict[str, Any]] = []
 
     for group in groups:
-
-        offers = group.get(
-            "offers",
-            [],
-        )
+        offers = group.get("offers", [])
 
         if not offers:
             continue
 
-        # -----------------------------------------------------
-        # Find valid offers
-        # -----------------------------------------------------
+        valid_offers: List[Dict[str, Any]] = []
 
-        valid_offers = [
-            offer
-            for offer in offers
-            if isinstance(
-                offer.get("price"),
+        for offer in offers:
+            price = offer.get("price")
+
+            if not isinstance(
+                price,
                 (int, float),
+            ):
+                continue
+
+            shipping = offer.get(
+                "shipping",
+                0,
             )
-        ]
+
+            if not isinstance(
+                shipping,
+                (int, float),
+            ):
+                shipping = 0
+
+            offer_copy = offer.copy()
+
+            offer_copy["_total_price"] = (
+                float(price) + float(shipping)
+            )
+
+            offer_copy["discount"] = _calculate_discount(
+                price,
+                offer_copy.get("old_price"),
+                offer_copy.get("discount"),
+            )
+
+            valid_offers.append(
+                offer_copy
+            )
 
         if not valid_offers:
             continue
 
-        # -----------------------------------------------------
-        # Find cheapest offer including shipping
-        # -----------------------------------------------------
+        # ----------------------------------------------------
+        # Find cheapest offer
+        # ----------------------------------------------------
 
-        best_offer = min(
+        cheapest_offer = min(
             valid_offers,
-            key=calculate_total_price,
+            key=lambda offer: offer.get(
+                "_total_price",
+                float("inf"),
+            ),
         )
 
-        representative = group["product"]
+        # ----------------------------------------------------
+        # Find best visible discount
+        # ----------------------------------------------------
 
-        best_price = best_offer.get(
-            "price",
-            0,
+        highest_discount = max(
+            float(
+                offer.get(
+                    "discount",
+                    0,
+                )
+                or 0
+            )
+            for offer in valid_offers
         )
 
-        shipping = best_offer.get(
-            "shipping",
-            0,
+        # ----------------------------------------------------
+        # Representative product
+        # ----------------------------------------------------
+
+        representative = cheapest_offer
+
+        price = float(
+            representative.get(
+                "price",
+                0,
+            )
         )
 
-        if not isinstance(shipping, (int, float)):
-            shipping = 0
-
-        total_price = (
-            float(best_price)
-            + float(shipping)
+        shipping = float(
+            representative.get(
+                "shipping",
+                0,
+            )
+            or 0
         )
 
-        old_price = best_offer.get(
+        total_price = price + shipping
+
+        old_price = representative.get(
             "old_price"
         )
 
-        discount = calculate_discount(
-            best_offer
+        if not isinstance(
+            old_price,
+            (int, float),
+        ):
+            old_price = None
+
+        discount = _calculate_discount(
+            price,
+            old_price,
+            representative.get(
+                "discount",
+                0,
+            ),
         )
 
-        # -----------------------------------------------------
-        # Build normalized result
-        # -----------------------------------------------------
+        # ----------------------------------------------------
+        # Build clean offer list
+        # ----------------------------------------------------
 
-        result: Dict[str, Any] = {
+        clean_offers: List[Dict[str, Any]] = []
 
+        for offer in sorted(
+            valid_offers,
+            key=lambda item: item.get(
+                "_total_price",
+                float("inf"),
+            ),
+        ):
+            clean_offer = {
+                key: value
+                for key, value in offer.items()
+                if key != "_total_price"
+            }
+
+            clean_offers.append(
+                clean_offer
+            )
+
+        # ----------------------------------------------------
+        # Final API product
+        # ----------------------------------------------------
+
+        result = {
             "id": representative.get(
                 "id"
             ),
-
             "name": representative.get(
-                "name"
+                "name",
+                "Unknown product",
             ),
-
             "brand": representative.get(
                 "brand"
             ),
-
             "model": representative.get(
                 "model"
             ),
-
             "variant": representative.get(
                 "variant"
             ),
-
             "category": representative.get(
                 "category"
             ),
-
-            "image": (
-                best_offer.get("image")
-                or representative.get("image")
+            "image": representative.get(
+                "image"
             ),
-
-            # Best product price
-            "price": best_price,
-
-            # Useful for sorting
-            "best_price": best_price,
-
-            # Product + shipping
+            "price": price,
+            "best_price": price,
             "total_price": total_price,
-
             "shipping": shipping,
-
             "old_price": old_price,
-
             "discount": discount,
-
-            "currency": best_offer.get(
+            "currency": representative.get(
                 "currency",
                 "NPR",
             ),
-
-            "store": best_offer.get(
-                "store"
+            "store": representative.get(
+                "store",
+                "Unknown store",
             ),
-
-            "seller": best_offer.get(
+            "seller": representative.get(
                 "seller"
             ),
-
-            "url": best_offer.get(
-                "url"
+            "url": representative.get(
+                "url",
+                "",
             ),
-
-            "rating": best_offer.get(
+            "rating": representative.get(
                 "rating"
             ),
-
-            "reviews": best_offer.get(
-                "reviews"
+            "reviews": representative.get(
+                "reviews",
+                0,
             ),
-
-            "in_stock": best_offer.get(
+            "in_stock": representative.get(
                 "in_stock",
                 True,
             ),
-
-            # Every store offer
-            "offers": offers,
-
-            # Number of stores
+            "source": representative.get(
+                "source"
+            ),
+            "checked_at": representative.get(
+                "checked_at"
+            ),
+            "offers": clean_offers,
             "offer_count": len(
-                offers
+                clean_offers
             ),
         }
+
+        # If the cheapest offer has no discount but another
+        # offer has one, retain the representative's discount
+        # while still exposing the group's maximum discount.
+        if discount <= 0 and highest_discount > 0:
+            result["discount"] = highest_discount
 
         results.append(result)
 

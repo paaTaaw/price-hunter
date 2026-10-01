@@ -31,7 +31,7 @@ class ProductService:
     ) -> Dict[str, Any]:
         """
         Search all configured stores and return
-        grouped and sorted products.
+        relevant, grouped and sorted products.
         """
 
         query = query.strip()
@@ -64,11 +64,12 @@ class ProductService:
                 )
 
         # -----------------------------------------------------
-        # Group matching products
+        # Filter, group and normalize products
         # -----------------------------------------------------
 
         product_groups = group_products(
-            all_offers
+            all_offers,
+            query=query,
         )
 
         # -----------------------------------------------------
@@ -103,7 +104,7 @@ class ProductService:
             )
 
         # -----------------------------------------------------
-        # Sort by discount
+        # Sort by highest discount
         # -----------------------------------------------------
 
         elif sort == "discount":

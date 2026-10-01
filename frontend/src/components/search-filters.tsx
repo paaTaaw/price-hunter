@@ -2,7 +2,7 @@
 
 import { Check, RotateCcw } from "lucide-react";
 
-type SearchFiltersProps = {
+interface SearchFiltersProps {
   saleOnly: boolean;
   setSaleOnly: (value: boolean) => void;
 
@@ -16,9 +16,14 @@ type SearchFiltersProps = {
   setTimeRange: (value: string) => void;
 
   onReset: () => void;
-};
+}
 
-const stores = ["All stores", "Daraz", "Amazon"];
+const stores = [
+  "All stores",
+  "Daraz Nepal",
+  "Demo Store",
+  "Demo Store 2",
+];
 
 export function SearchFilters({
   saleOnly,
@@ -40,6 +45,7 @@ export function SearchFilters({
         </h2>
 
         <button
+          type="button"
           onClick={onReset}
           className="flex items-center gap-1.5 text-xs text-zinc-600 transition hover:text-white"
         >
@@ -55,6 +61,7 @@ export function SearchFilters({
         </p>
 
         <button
+          type="button"
           onClick={() => setSaleOnly(!saleOnly)}
           className="flex w-full items-center justify-between text-sm"
         >
@@ -83,6 +90,7 @@ export function SearchFilters({
         <div className="space-y-3">
           {stores.map((store) => (
             <button
+              type="button"
               key={store}
               onClick={() => setSelectedStore(store)}
               className="flex w-full items-center justify-between text-sm"
@@ -153,6 +161,7 @@ export function SearchFilters({
             ["week", "This week"],
           ].map(([value, label]) => (
             <button
+              type="button"
               key={value}
               onClick={() => setTimeRange(value)}
               className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
